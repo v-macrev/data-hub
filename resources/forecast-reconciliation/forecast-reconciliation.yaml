@@ -1,0 +1,88 @@
+resources:
+  jobs:
+    job_forecast_reconciliation:
+      name: job_forecast_reconciliation
+      tasks:
+        - task_key: micro_forecast_linear_regression
+          notebook_task:
+            notebook_path: /Repos/Repositórios/data-hub/src/forecast-reconciliation/01-linear-regression-products
+            base_parameters:
+              ORIGIN_TABLE: samples.bakehouse.sales_transactions
+              ORIGIN_PERIOD_COLUMN: dateTime
+              ORIGIN_Y_COL: quantity
+              ORIGIN_KEY_SEPARATOR: ;
+              ORIGIN_KEY_PARTS: product,paymentMethod
+              LINEAR_REGRESSION_TABLE: workspace.forecasting.linear_regression_forecast
+              TYPE_PERIOD: day
+              RANGE_PREDICTION: "10"
+            source: WORKSPACE
+        - task_key: macro_forecast_best_model
+          depends_on:
+            - task_key: micro_forecast_linear_regression
+          notebook_task:
+            notebook_path: /Repos/Repositórios/data-hub/src/forecast-reconciliation/02-best-models-categories
+            base_parameters:
+              ORIGIN_TABLE: samples.bakehouse.sales_transactions
+              DATE_COL: dateTime
+              QTY_COL: quantity
+              KEY_COLS: '["product"]'
+              KEY_DELIM: ;
+              MACRO_FORECASTING_TABLE: workspace.forecasting.macro_forecast
+              MACRO_KEY_COL: cd_key
+              ALIAS_DT: dt_period
+              ALIAS_KEY: cd_key
+              ALIAS_UNITS: qt_units
+              TOP_N: "10"
+              PANDEMIC_START: 2020-03-01
+              PANDEMIC_END: 2021-12-01
+              POST_PANDEMIC_START: 2022-01-01
+              TYPE_PERIOD: day
+              DOW_BOOLEAN: "true"
+              RANGE_PREDICTION: "5"
+              VALIDATION_RANGE: "2"
+              PERIOD_COLUMN: dt_period
+              ID_COLUMN: cd_key
+              Y_COLUMN: qt_units
+              CV_FOLDS: "1"
+              MIN_TRAIN_PERIOD: "3"
+              FILL_MISSING_VALUES: "0.0"
+              CLIP_NEGATIVE: "true"
+            source: WORKSPACE
+        - task_key: macro-micro-reconciliation
+          depends_on:
+            - task_key: macro_forecast_best_model
+          notebook_task:
+            notebook_path: /Repos/Repositórios/data-hub/src/forecast-reconciliation/03-macro-micro-union
+            base_parameters:
+              ORIGIN_TABLE: samples.bakehouse.sales_transactions
+              ORIGIN_PERIOD_COLUMN: dateTime
+              ORIGIN_KEY_PARTS: '["product", "paymentMethod"]'
+              ORIGIN_Y_COL: quantity
+              HIST_PERIOD_COL: dt_period
+              HIST_KEY_PARTS: '["product", "paymentMethod"]'
+              HIST_Y_COL: qt_units
+              MACRO_FORECAST_TABLE: workspace.forecasting.macro_forecast
+              MACRO_FORECAST_PERIOD_COLUMN: dt_period
+              MACRO_FORECAST_KEY_COLUMN: cd_key
+              MACRO_KEY_SEPARATOR: ;
+              MACRO_KEY_PARTS: '["product"]'
+              MACRO_FORECAST_Y_PRED_COLUMN: y_pred
+              MICRO_FORECAST_TABLE: workspace.forecasting.linear_regression_forecast
+              MICRO_FORECAST_PERIOD_COLUMN: dt_period
+              MICRO_FORECAST_KEY_COLUMN: cd_key
+              MICRO_KEY_SEPARATOR: ;
+              MICRO_KEY_PARTS: '["product", "paymentMethod"]'
+              MICRO_FORECAST_Y_PRED_COLUMN: qt_units
+              TARGET_TABLE: workspace.forecasting.bakehouse_forecasting
+              CAP_LAUNCH: "0.25"
+              CAP_MATURE: "0.60"
+              PRIOR_SMOOTH_FRAC: "0.02"
+              BETA_LAUNCH_MIN: "2.0"
+              BETA_LAUNCH_MAX: "10.0"
+              BETA_MATURE_MIN: "1.0"
+              BETA_MATURE_MAX: "4.0"
+              USE_SQRT_PRODUCT_FOR_LAUNCH_RELIABILITY: "true"
+            source: WORKSPACE
+      queue:
+        enabled: true
+      performance_target: PERFORMANCE_OPTIMIZED
